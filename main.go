@@ -17,6 +17,7 @@ func main() {
 	var compareDuration float64
 	var maxOverlap float64
 	var skipTime float64
+	var numLoops int
 	flag.StringVar(&inputFile, "input", "", "path to input audio file")
 	flag.StringVar(&outputFile, "output", "", "path to output audio file")
 	flag.Float64Var(&compareDuration, "compare-duration", 1.0,
@@ -25,6 +26,7 @@ func main() {
 		"maximum amount of time overlap between loops")
 	flag.Float64Var(&skipTime, "skip-time", 1.0,
 		"amount of time to skip at start of repeated track")
+	flag.IntVar(&numLoops, "num-loops", 1, "number of times to loop")
 	flag.Parse()
 	if inputFile == "" || outputFile == "" {
 		fmt.Fprintln(os.Stderr, "Missing required -input or -output flag.")
@@ -65,7 +67,17 @@ func main() {
 	fmt.Println()
 	fmt.Println("best overlap time:", float64(bestIndex)/float64(audioInfo.Frequency))
 
-	combined := append(samples[:bestIndex], samples[skipSamples:]...)
+	var combined []float64
+	for i := 0; i < numLoops+1; i++ {
+		subSamples := samples
+		if i <= numLoops {
+			subSamples = subSamples[:bestIndex]
+		}
+		if i > 0 {
+			subSamples = subSamples[skipSamples:]
+		}
+		combined = append(combined, subSamples...)
+	}
 	WriteSamples(outputFile, audioInfo, combined)
 }
 
