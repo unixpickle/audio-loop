@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"os"
 
 	"github.com/unixpickle/essentials"
@@ -47,19 +46,21 @@ func main() {
 	matchSamples := samples[skipSamples : skipSamples+compareSamples]
 	startIdx := essentials.MaxInt(0, len(samples)-compareSamples-maxOverlapSamples)
 	endIdx := len(samples) - compareSamples
-	bestCorrelation := -1.01
-	bestIndex := endIdx
-	for i := endIdx; i >= startIdx; i-- {
-		baseSamples := samples[i : i+compareSamples]
-		corr := ComputeCorrelation(matchSamples, baseSamples)
+	slidingWindow := SlidingWindow(samples, startIdx, endIdx, compareSamples)
+
+	bestCorrelation := float32(-1.01)
+	bestIndex := startIdx
+	index := startIdx
+	for corr := range ComputeCorrelations(matchSamples, slidingWindow) {
 		if corr > bestCorrelation {
 			bestCorrelation = corr
-			bestIndex = i
+			bestIndex = index
 		}
-		if i%1000 == 0 || i == startIdx {
+		index++
+		if index%1000 == 0 || index == endIdx-1 {
 			fmt.Printf(
 				"\rcompleted=%.2f%%    correlation=%.2f   ",
-				100*float64(1+endIdx-i)/float64(endIdx-startIdx+1),
+				100*float64(1+index-startIdx)/float64(endIdx-startIdx+1),
 				bestCorrelation,
 			)
 		}
@@ -67,7 +68,7 @@ func main() {
 	fmt.Println()
 	fmt.Println("best overlap time:", float64(bestIndex)/float64(audioInfo.Frequency))
 
-	var combined []float64
+	var combined []float32
 	for i := 0; i < numLoops+1; i++ {
 		subSamples := samples
 		if i <= numLoops {
@@ -81,16 +82,18 @@ func main() {
 	WriteSamples(outputFile, audioInfo, combined)
 }
 
-func ReadSamples(path string) ([]float64, *ffmpego.AudioInfo) {
+func ReadSamples(path string) ([]float32, *ffmpego.AudioInfo) {
 	reader, err := ffmpego.NewAudioReader(path)
 	essentials.Must(err)
 	defer reader.Close()
 
-	var res []float64
+	var res []float32
 	buf := make([]float64, 65536)
 	for {
 		count, err := reader.ReadSamples(buf)
-		res = append(res, buf[:count]...)
+		for _, x := range buf[:count] {
+			res = append(res, float32(x))
+		}
 		if err == io.EOF {
 			break
 		}
@@ -99,24 +102,13 @@ func ReadSamples(path string) ([]float64, *ffmpego.AudioInfo) {
 	return res, reader.AudioInfo()
 }
 
-func WriteSamples(path string, info *ffmpego.AudioInfo, samples []float64) {
+func WriteSamples(path string, info *ffmpego.AudioInfo, samples []float32) {
+	samples64 := make([]float64, len(samples))
+	for i, x := range samples {
+		samples64[i] = float64(x)
+	}
 	writer, err := ffmpego.NewAudioWriter(path, info.Frequency)
 	essentials.Must(err)
-	essentials.Must(writer.WriteSamples(samples))
+	essentials.Must(writer.WriteSamples(samples64))
 	essentials.Must(writer.Close())
-}
-
-func ComputeCorrelation(s1, s2 []float64) float64 {
-	if len(s1) != len(s2) {
-		panic("mismatch in length")
-	}
-	var m1, m2 float64
-	var dotProd float64
-	for i, x := range s1 {
-		m1 += x * x
-		y := s2[i]
-		m2 += y * y
-		dotProd += x * y
-	}
-	return dotProd / math.Sqrt(m1*m2)
 }
