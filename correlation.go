@@ -9,7 +9,7 @@ import (
 
 const (
 	BufferSize   = 128
-	NormInterval = 128
+	NormInterval = 1024
 )
 
 type NormVec struct {
@@ -25,10 +25,12 @@ func SlidingWindow(slice []float32, start, end, length int) <-chan NormVec {
 		for i := start; i < end; i++ {
 			vec := slice[i : i+length]
 			if (i-start)%NormInterval == 0 {
-				norm = 0
-				for _, x := range vec {
-					norm += x * x
-				}
+				norm = blas32.Nrm2(blas32.Vector{
+					N:    len(vec),
+					Inc:  1,
+					Data: vec,
+				})
+				norm = norm * norm
 			} else {
 				norm -= slice[i-1] * slice[i-1]
 				norm += vec[length-1] * vec[length-1]
